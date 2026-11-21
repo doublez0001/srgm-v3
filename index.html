@@ -1,1 +1,186 @@
 
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#075c36">
+<title>SRGM V3 - Administrasi</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f1f5f2;color:#183528;font-family:Arial,sans-serif}
+header{background:linear-gradient(120deg,#064b2c,#087a46);color:white;padding:22px 18px}
+header h2{margin:0 0 5px}
+header p{margin:0;color:#e5f4e9}
+main{max-width:1050px;margin:auto;padding:18px}
+.card{background:white;padding:18px;border-radius:14px;margin-bottom:15px;box-shadow:0 3px 14px #1232}
+input,button{width:100%;padding:13px;margin:7px 0;border-radius:8px;border:1px solid #ccd8ce;font-size:15px}
+button{background:#087443;color:white;border:0;font-weight:bold;cursor:pointer}
+button.secondary{background:#e7f1e9;color:#075c36}
+button.logout{background:#8a332b}
+nav{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:15px}
+nav button{margin:0}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:#edf6ef;padding:15px;border-radius:10px}
+.stat strong{display:block;font-size:23px;color:#075c36;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:10px;border-bottom:1px solid #ddd;text-align:left}
+.tablewrap{overflow-x:auto}
+#app{display:none}
+#message{color:#a33;white-space:pre-wrap}
+.small{font-size:12px;color:#63766a}
+</style>
+</head>
+<body>
+<header>
+<h2>SRGM V3</h2>
+<p>Solidaritas Riders Garuda Manokwari</p>
+</header>
+<main>
+<section id="login" class="card">
+<h3>Login Pengurus</h3>
+<p class="small">Masuk menggunakan email dan password akun SRGM.</p>
+<input id="email" type="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">MASUK</button>
+<p id="message"></p>
+</section>
+
+<section id="app">
+<div class="card">
+<strong id="welcome">Dashboard SRGM</strong>
+<p id="role" class="small"></p>
+<button class="logout" onclick="logout()">Keluar</button>
+</div>
+<nav>
+<button onclick="showPage('dashboard')">Dashboard</button>
+<button onclick="showPage('members')">Data Anggota</button>
+<button onclick="showPage('officers')">Pengurus</button>
+<button onclick="showPage('dues_payments')">Iuran Bulanan</button>
+<button onclick="showPage('cash_transactions')">Kas Organisasi</button>
+</nav>
+<div id="content" class="card">
+<h3>Dashboard Ketua</h3>
+<p>Memuat data SRGM...</p>
+</div>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL = "https://siysmsknydmhrbxcqdvl.supabase.co";
+const SUPABASE_KEY = "sb_publishable_fNX3XVTbkYh2fMd0Dx77wA_v6x_xb9V";
+
+const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+let currentUser = null;
+let currentRole = "";
+
+function safe(value){
+ return String(value ?? "").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ })[c]);
+}
+
+async function login(){
+ const email=document.getElementById("email").value.trim();
+ const password=document.getElementById("password").value;
+ const msg=document.getElementById("message");
+ msg.textContent="Memeriksa akun...";
+ const {data,error}=await db.auth.signInWithPassword({email,password});
+ if(error){msg.textContent="Login gagal: "+error.message;return;}
+ currentUser=data.user;
+ await startApp();
+}
+
+async function startApp(){
+ document.getElementById("login").style.display="none";
+ document.getElementById("app").style.display="block";
+ document.getElementById("welcome").textContent="Selamat datang di SRGM V3";
+ await loadProfile();
+ await showPage("dashboard");
+}
+
+async function loadProfile(){
+ const {data,error}=await db.from("user_profiles").select("*").limit(100);
+ if(error){
+  document.getElementById("role").textContent="Profil belum dapat dibaca. Periksa izin database.";
+  return;
+ }
+ const profile=(data||[]).find(x=>
+  x.user_id===currentUser.id || x.id===currentUser.id
+ );
+ if(profile){
+  currentRole=profile.role||"";
+  document.getElementById("welcome").textContent=
+   "Selamat datang, "+(profile.full_name||"Pengurus SRGM");
+  document.getElementById("role").textContent="Jabatan: "+currentRole;
+ }else{
+  document.getElementById("role").textContent="Profil jabatan belum ditemukan.";
+ }
+}
+
+async function showPage(page){
+ const content=document.getElementById("content");
+ content.innerHTML="<p>Memuat data...</p>";
+
+ if(page==="dashboard"){
+  const {data,error}=await db.from("srgm_dashboard").select("*").limit(1);
+  if(error){
+   content.innerHTML="<h3>Dashboard SRGM</h3><p>Data dashboard belum dapat dibaca: "+safe(error.message)+"</p>";
+   return;
+  }
+  const d=(data||[])[0]||{};
+  content.innerHTML=`
+   <h3>Dashboard SRGM</h3>
+   <div class="stats">
+    <div class="stat">Total Anggota<strong>${safe(d.total_members??"—")}</strong></div>
+    <div class="stat">Anggota Aktif<strong>${safe(d.active_members??"—")}</strong></div>
+    <div class="stat">Total Iuran<strong>${safe(d.total_dues??"—")}</strong></div>
+    <div class="stat">Saldo Kas<strong>${safe(d.cash_balance??"—")}</strong></div>
+   </div>
+   <p class="small">Iuran wajib: Rp15.000 per bulan.</p>`;
+  return;
+ }
+
+ const titles={
+  members:"Data Anggota",
+  officers:"Data Pengurus",
+  dues_payments:"Pembayaran Iuran",
+  cash_transactions:"Kas Organisasi"
+ };
+ const {data,error}=await db.from(page).select("*").limit(100);
+ if(error){
+  content.innerHTML="<h3>"+titles[page]+"</h3><p>Belum dapat membaca data: "+safe(error.message)+"</p>";
+  return;
+ }
+ if(!data||!data.length){
+  content.innerHTML="<h3>"+titles[page]+"</h3><p>Belum ada data atau data belum dapat ditampilkan.</p>";
+  return;
+ }
+ const columns=Object.keys(data[0]);
+ content.innerHTML="<h3>"+titles[page]+"</h3><div class='tablewrap'><table><thead><tr>"+
+ columns.map(c=>"<th>"+safe(c)+"</th>").join("")+
+ "</tr></thead><tbody>"+
+ data.map(row=>"<tr>"+columns.map(c=>"<td>"+safe(row[c])+"</td>").join("")+"</tr>").join("")+
+ "</tbody></table></div><p class='small'>Menampilkan maksimal 100 baris.</p>";
+}
+
+async function logout(){
+ await db.auth.signOut();
+ currentUser=null;
+ document.getElementById("app").style.display="none";
+ document.getElementById("login").style.display="block";
+ document.getElementById("password").value="";
+ document.getElementById("message").textContent="Kamu sudah keluar.";
+}
+
+db.auth.getSession().then(({data})=>{
+ if(data.session){
+  currentUser=data.session.user;
+  startApp();
+ }
+});
+</script>
+</body>
+</html>
